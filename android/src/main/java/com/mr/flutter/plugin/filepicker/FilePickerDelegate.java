@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
@@ -25,7 +26,16 @@ import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.PluginRegistry;
 
+/**
+ * Patched version for Android SDKs below 33.
+ */
 public class FilePickerDelegate implements PluginRegistry.ActivityResultListener, PluginRegistry.RequestPermissionsResultListener {
+
+    // Define the Android 13/14 API level and permission strings if not available in the compile SDK.
+    private static final int TIRAMISU = 33;
+    private static final String READ_MEDIA_IMAGES = "android.permission.READ_MEDIA_IMAGES";
+    private static final String READ_MEDIA_VIDEO = "android.permission.READ_MEDIA_VIDEO";
+    private static final String READ_MEDIA_AUDIO = "android.permission.READ_MEDIA_AUDIO";
 
     private static final String TAG = "FilePickerDelegate";
     private static final int REQUEST_CODE = (FilePickerPlugin.class.hashCode() + 43) & 0x0000ffff;
@@ -54,7 +64,6 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
                     public void askForPermission(final String permissionName, final int requestCode) {
                         ActivityCompat.requestPermissions(activity, new String[]{permissionName}, requestCode);
                     }
-
                 }
         );
     }
@@ -70,11 +79,10 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
         this.permissionManager = permissionManager;
     }
 
-
     @Override
     public boolean onActivityResult(final int requestCode, final int resultCode, final Intent data) {
 
-        if(type == null) {
+        if (type == null) {
             return false;
         }
 
@@ -95,7 +103,7 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
                                 final Uri currentUri = data.getClipData().getItemAt(currentItem).getUri();
                                 final FileInfo file = FileUtils.openFileStream(FilePickerDelegate.this.activity, currentUri, loadDataToMemory);
 
-                                if(file != null) {
+                                if (file != null) {
                                     files.add(file);
                                     Log.d(FilePickerDelegate.TAG, "[MultiFilePick] File #" + currentItem + " - URI: " + currentUri.getPath());
                                 }
@@ -112,7 +120,7 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
                                 Log.d(FilePickerDelegate.TAG, "[SingleFilePick] File URI:" + uri.toString());
                                 final String dirPath = FileUtils.getFullPathFromTreeUri(uri, activity);
 
-                                if(dirPath != null) {
+                                if (dirPath != null) {
                                     finishWithSuccess(dirPath);
                                 } else {
                                     finishWithError("unknown_path", "Failed to retrieve directory path.");
@@ -122,7 +130,7 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
 
                             final FileInfo file = FileUtils.openFileStream(FilePickerDelegate.this.activity, uri, loadDataToMemory);
 
-                            if(file != null) {
+                            if (file != null) {
                                 files.add(file);
                             }
 
@@ -133,7 +141,7 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
                                 finishWithError("unknown_path", "Failed to retrieve path.");
                             }
 
-                        } else if (data.getExtras() != null){
+                        } else if (data.getExtras() != null) {
                             Bundle bundle = data.getExtras();
                             if (bundle.keySet().contains("selectedItems")) {
                                 ArrayList<Parcelable> fileUris = bundle.getParcelableArrayList("selectedItems");
@@ -183,7 +191,7 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
             return false;
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= TIRAMISU) {
             // Check if any of the new permissions were granted
             boolean permissionGranted = false;
             for (int result : grantResults) {
@@ -278,17 +286,17 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
         this.allowedExtensions = allowedExtensions;
 
         // --- Modified permission check ---
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Check for any of the new media permissions
-            boolean hasAnyPermission = this.permissionManager.isPermissionGranted(Manifest.permission.READ_MEDIA_IMAGES)
-                    || this.permissionManager.isPermissionGranted(Manifest.permission.READ_MEDIA_VIDEO)
-                    || this.permissionManager.isPermissionGranted(Manifest.permission.READ_MEDIA_AUDIO);
+        if (Build.VERSION.SDK_INT >= TIRAMISU) {
+            // Check for any of the new media permissions using our defined constants
+            boolean hasAnyPermission = this.permissionManager.isPermissionGranted(READ_MEDIA_IMAGES)
+                    || this.permissionManager.isPermissionGranted(READ_MEDIA_VIDEO)
+                    || this.permissionManager.isPermissionGranted(READ_MEDIA_AUDIO);
             if (!hasAnyPermission) {
                 // Request all new media permissions at once.
                 ActivityCompat.requestPermissions(activity, new String[]{
-                        Manifest.permission.READ_MEDIA_IMAGES,
-                        Manifest.permission.READ_MEDIA_VIDEO,
-                        Manifest.permission.READ_MEDIA_AUDIO
+                        READ_MEDIA_IMAGES,
+                        READ_MEDIA_VIDEO,
+                        READ_MEDIA_AUDIO
                 }, REQUEST_CODE);
                 return;
             }
@@ -337,7 +345,7 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
 
     private void dispatchEventStatus(final boolean status) {
 
-        if(eventSink == null || type.equals("dir")) {
+        if (eventSink == null || type.equals("dir")) {
             return;
         }
 
@@ -349,7 +357,6 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
         }.obtainMessage().sendToTarget();
     }
 
-
     private void clearPendingResult() {
         this.pendingResult = null;
     }
@@ -359,5 +366,4 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
 
         void askForPermission(String permissionName, int requestCode);
     }
-
 }
