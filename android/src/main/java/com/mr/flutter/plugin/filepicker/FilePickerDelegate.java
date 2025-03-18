@@ -7,7 +7,6 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
@@ -184,13 +183,28 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
             return false;
         }
 
-        final boolean permissionGranted =
-                grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-
-        if (permissionGranted) {
-            this.startFileExplorer();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Check if any of the new permissions were granted
+            boolean permissionGranted = false;
+            for (int result : grantResults) {
+                if (result == PackageManager.PERMISSION_GRANTED) {
+                    permissionGranted = true;
+                    break;
+                }
+            }
+            if (permissionGranted) {
+                this.startFileExplorer();
+            } else {
+                finishWithError("read_media_denied", "User did not allow reading media files");
+            }
         } else {
-            finishWithError("read_external_storage_denied", "User did not allow reading external storage");
+            final boolean permissionGranted =
+                    grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (permissionGranted) {
+                this.startFileExplorer();
+            } else {
+                finishWithError("read_external_storage_denied", "User did not allow reading external storage");
+            }
         }
 
         return true;
@@ -263,10 +277,28 @@ public class FilePickerDelegate implements PluginRegistry.ActivityResultListener
         this.loadDataToMemory = withData;
         this.allowedExtensions = allowedExtensions;
 
-        if (!this.permissionManager.isPermissionGranted(Manifest.permission.READ_EXTERNAL_STORAGE)) {
-            this.permissionManager.askForPermission(Manifest.permission.READ_EXTERNAL_STORAGE, REQUEST_CODE);
-            return;
+        // --- Modified permission check ---
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Check for any of the new media permissions
+            boolean hasAnyPermission = this.permissionManager.isPermissionGranted(Manifest.permission.READ_MEDIA_IMAGES)
+                    || this.permissionManager.isPermissionGranted(Manifest.permission.READ_MEDIA_VIDEO)
+                    || this.permissionManager.isPermissionGranted(Manifest.permission.READ_MEDIA_AUDIO);
+            if (!hasAnyPermission) {
+                // Request all new media permissions at once.
+                ActivityCompat.requestPermissions(activity, new String[]{
+                        Manifest.permission.READ_MEDIA_IMAGES,
+                        Manifest.permission.READ_MEDIA_VIDEO,
+                        Manifest.permission.READ_MEDIA_AUDIO
+                }, REQUEST_CODE);
+                return;
+            }
+        } else {
+            if (!this.permissionManager.isPermissionGranted(Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                this.permissionManager.askForPermission(Manifest.permission.READ_EXTERNAL_STORAGE, REQUEST_CODE);
+                return;
+            }
         }
+        // --- End modified permission check ---
 
         this.startFileExplorer();
     }
